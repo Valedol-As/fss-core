@@ -1,4 +1,5 @@
-# ВАЖНО: Режим отрисовки без окна (для сервера/GitHub)
+# ВАЖНО: Эти две строки должны быть ПЕРВЫМИ.
+# Они включают режим "без окна", чтобы график точно сохранился в файл.
 import matplotlib
 matplotlib.use('Agg')
 
@@ -8,17 +9,20 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import os
 
-print(">>> ЗАПУСК ФСС v3.0: Исправление логики данных...")
+print(">>> ЗАПУСК ФСС v4.0: Исправление логики данных (Series -> Scalar)...")
 
 class FSS_Core:
     def calculate_state_P(self, data):
         close = data['close']
         sma_50 = close.rolling(50).mean()
+        
+        # Явно берем последнее значение (скаляр), а не весь столбец
         current_price = close.iloc[-1]
+        last_sma50 = sma_50.iloc[-1]
+        
         volatility = data['returns'].std() * 100
         
         # Защита от деления на ноль и NaN
-        last_sma50 = sma_50.iloc[-1]
         if pd.isna(last_sma50) or last_sma50 == 0: 
             deviation = 0
         else: 
@@ -37,7 +41,7 @@ class FSS_Core:
         sma_50 = data['close'].rolling(50).mean()
         sma_200 = data['close'].rolling(200).mean()
         
-        # ИЗМЕНЕНИЕ: Явно извлекаем последние значения (скаляры), а не Series
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Явно извлекаем последние значения (скаляры)
         last_close = data['close'].iloc[-1]
         s50 = sma_50.iloc[-1]
         s200 = sma_200.iloc[-1]
@@ -61,7 +65,7 @@ class FSS_Core:
         vol = data['volume']
         avg_vol = vol.rolling(20).mean()
         
-        # ИЗМЕНЕНИЕ: Явно извлекаем последние значения
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Явно извлекаем последние значения
         current_vol = vol.iloc[-1]
         last_avg = avg_vol.iloc[-1]
         price_change = data['returns'].iloc[-1]
