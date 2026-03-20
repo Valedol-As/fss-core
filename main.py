@@ -1,5 +1,4 @@
-# ВАЖНО: Эти две строки должны быть ПЕРВЫМИ, до импорта pyplot!
-# Они включают режим "без окна", чтобы график точно сохранился в файл.
+# ВАЖНО: Режим отрисовки без окна (для сервера/GitHub)
 import matplotlib
 matplotlib.use('Agg')
 
@@ -9,7 +8,7 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import os
 
-print(">>> ЗАПУСК ФСС: Анализ сущности и генерация карты...")
+print(">>> ЗАПУСК ФСС v3.0: Исправление логики данных...")
 
 class FSS_Core:
     def calculate_state_P(self, data):
@@ -18,8 +17,12 @@ class FSS_Core:
         current_price = close.iloc[-1]
         volatility = data['returns'].std() * 100
         
-        if pd.isna(sma_50.iloc[-1]) or sma_50.iloc[-1] == 0: deviation = 0
-        else: deviation = (current_price - sma_50.iloc[-1]) / sma_50.iloc[-1] * 100
+        # Защита от деления на ноль и NaN
+        last_sma50 = sma_50.iloc[-1]
+        if pd.isna(last_sma50) or last_sma50 == 0: 
+            deviation = 0
+        else: 
+            deviation = (current_price - last_sma50) / last_sma50 * 100
             
         avg_vol = data['volume'].rolling(20).mean().iloc[-1]
         curr_vol = data['volume'].iloc[-1]
@@ -33,37 +36,58 @@ class FSS_Core:
     def calculate_form_S(self, data):
         sma_50 = data['close'].rolling(50).mean()
         sma_200 = data['close'].rolling(200).mean()
+        
+        # ИЗМЕНЕНИЕ: Явно извлекаем последние значения (скаляры), а не Series
         last_close = data['close'].iloc[-1]
         s50 = sma_50.iloc[-1]
         s200 = sma_200.iloc[-1]
         
-        if pd.isna(s50) or pd.isna(s200): return 5.0
+        # Проверка на наличие данных
+        if pd.isna(s50) or pd.isna(s200): 
+            return 5.0
 
-        if abs(s50 - s200) < (last_close * 0.01): return 9.0 # Нестатичная
+        # Теперь сравнения работают корректно, так как это числа, а не списки
+        if abs(s50 - s200) < (last_close * 0.01): 
+            return 9.0 # Нестатичная
         elif (last_close > s50 > s200) or (last_close < s50 < s200):
-            if abs(last_close - s50) < (last_close * 0.02): return 7.0 # Подвижная
-            else: return 8.0 # Статичная
-        else: return 3.0 # Неподвижная
+            if abs(last_close - s50) < (last_close * 0.02): 
+                return 7.0 # Подвижная
+            else: 
+                return 8.0 # Статичная
+        else: 
+            return 3.0 # Неподвижная
 
     def calculate_action_D(self, data):
         vol = data['volume']
         avg_vol = vol.rolling(20).mean()
+        
+        # ИЗМЕНЕНИЕ: Явно извлекаем последние значения
         current_vol = vol.iloc[-1]
         last_avg = avg_vol.iloc[-1]
         price_change = data['returns'].iloc[-1]
         
-        if pd.isna(last_avg): return 5.0
+        if pd.isna(last_avg): 
+            return 5.0
 
-        if current_vol > last_avg * 1.8 and price_change < 0: return 2.0 # Распад
-        elif current_vol < last_avg * 0.6: return 3.0 # Покой
-        elif abs(price_change) < 0.01 and abs(current_vol - last_avg) < last_avg * 0.2: return 6.0 # Равновесие
-        else: return 8.0 # Движение
+        # Теперь сравнения корректны
+        if current_vol > last_avg * 1.8 and price_change < 0: 
+            return 2.0 # Распад
+        elif current_vol < last_avg * 0.6: 
+            return 3.0 # Покой
+        elif abs(price_change) < 0.01 and abs(current_vol - last_avg) < last_avg * 0.2: 
+            return 6.0 # Равновесие
+        else: 
+            return 8.0 # Движение
 
     def calculate_de_factor(self, data):
         volatility = data['returns'].rolling(10).std().iloc[-1] * 100
         mean_20 = data['close'].rolling(20).mean().iloc[-1]
-        if pd.isna(mean_20) or mean_20 == 0: tension = 0
-        else: tension = abs(data['close'].iloc[-1] - mean_20) / data['close'].iloc[-1] * 100
+        current_price = data['close'].iloc[-1]
+        
+        if pd.isna(mean_20) or mean_20 == 0: 
+            tension = 0
+        else: 
+            tension = abs(current_price - mean_20) / current_price * 100
         
         if volatility < 0.5: return 3.0
         elif volatility > 3.0 and tension > 2.0: return 9.0
@@ -91,11 +115,10 @@ class FSS_Core:
             if pattern == 'EP' and ops['Will'] > 6.0: return 'BUY'
             if pattern == 'NV' and ops['Intention'] > 7.5: return 'BUY'
         
-        # ЛОГИКА ПРОДАЖИ (Расширенная)
+        # ЛОГИКА ПРОДАЖИ
         if in_position:
             if pattern == 'NV' and ops['Intention'] < 4.5: return 'SELL'
             if pattern == 'PD' and ops['Love'] < 4.0: return 'SELL'
-            # Стоп-лосс и Тейк-профит для гарантии появления красных точек
             if current_price < entry_price * 0.95: return 'SELL_STOP'
             if current_price > entry_price * 1.15 and ops['Will'] < 5.0: return 'SELL_PROFIT'
             
@@ -113,6 +136,7 @@ def run_fss_analysis(ticker='AAPL'):
         print(f"ОШИБКА СЕТИ: {e}")
         return
 
+    # Подготовка данных
     df['returns'] = df['Close'].pct_change()
     df['Volume'] = df['Volume'].fillna(0)
     df['close'] = df['Close']
@@ -132,6 +156,7 @@ def run_fss_analysis(ticker='AAPL'):
     
     for i in range(200, len(df)):
         window = df.iloc[i-200:i+1]
+        
         p = core.calculate_state_P(window)
         s = core.calculate_form_S(window)
         d = core.calculate_action_D(window)
@@ -163,8 +188,7 @@ def run_fss_analysis(ticker='AAPL'):
     print(f"СУММАРНАЯ ДОХОДНОСТЬ: {total_profit_pct:.2f}%")
     print("="*40)
 
-    # --- ГЕНЕРАЦИЯ ГРАФИКА В РЕЖИМЕ AGG ---
-    print("\nГенерация изображения (режим без окна)...")
+    # Отрисовка
     plt.figure(figsize=(15, 8))
     plt.plot(df.index, df['Close'], label='Поток Энергии (Цена)', color='#1f77b4', linewidth=1.5)
     
@@ -174,26 +198,23 @@ def run_fss_analysis(ticker='AAPL'):
     if sell_points['x']:
         plt.scatter(sell_points['x'], sell_points['y'], color='#d62728', marker='v', s=150, label='ДИССОНАНС (Выход)', zorder=5, edgecolors='black')
         
-    plt.title(f'Карта Реальности ФСС: {ticker}\nДоходность стратегии: {total_profit_pct:.2f}%')
+    title_text = f'Карта Реальности ФСС: {ticker}\nДоходность: {total_profit_pct:.2f}%'
+    plt.title(title_text)
     plt.xlabel('Время')
     plt.ylabel('Цена')
     plt.legend()
     plt.grid(True, alpha=0.3)
     
-    # ЖЕСТКОЕ СОХРАНЕНИЕ В ФАЙЛ
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    filename = os.path.join(script_dir, 'fss_result.png')
+    filename = os.path.join(script_dir, 'fss_map_fixed.png')
     
     try:
         plt.savefig(filename, dpi=150, bbox_inches='tight')
         print(f"\n>>> УСПЕХ! ГРАФИК СОХРАНЕН:")
         print(f">>> {filename}")
-        print("\n1. Откройте папку: " + script_dir)
-        print("2. Найдите файл 'fss_result.png'")
-        print("3. Откройте его как обычную картинку.")
+        print("\nОткройте этот файл, чтобы увидеть результат.")
     except Exception as e:
-        print(f"\n!!! ОШИБКА ПРИ СОХРАНЕНИИ: {e}")
-        print("Проверьте права на запись в папку.")
+        print(f"Ошибка сохранения: {e}")
     
     plt.close()
 
