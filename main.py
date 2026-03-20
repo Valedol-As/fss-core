@@ -1,4 +1,5 @@
-# ВАЖНО: Режим отрисовки без окна (для сервера/GitHub)
+# ВАЖНО: Эти две строки должны быть ПЕРВЫМИ, до импорта pyplot!
+# Они включают режим "без окна", чтобы график точно сохранился в файл.
 import matplotlib
 matplotlib.use('Agg')
 
@@ -8,7 +9,7 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import os
 
-print(">>> ЗАПУСК ФСС v2.0: Анализ + Симуляция Торговли")
+print(">>> ЗАПУСК ФСС: Анализ сущности и генерация карты...")
 
 class FSS_Core:
     def calculate_state_P(self, data):
@@ -84,22 +85,18 @@ class FSS_Core:
         return 'MIX'
 
     def generate_signal(self, pattern, ops, in_position, current_price, entry_price):
-        # ЛОГИКА ПОКУПКИ (Вход)
+        # ЛОГИКА ПОКУПКИ
         if not in_position:
             if pattern == 'PD' and ops['Love'] > 5.5: return 'BUY'
             if pattern == 'EP' and ops['Will'] > 6.0: return 'BUY'
             if pattern == 'NV' and ops['Intention'] > 7.5: return 'BUY'
         
-        # ЛОГИКА ПРОДАЖИ (Выход) - Расширенная!
+        # ЛОГИКА ПРОДАЖИ (Расширенная)
         if in_position:
-            # 1. Паттерн распада или экстремума
             if pattern == 'NV' and ops['Intention'] < 4.5: return 'SELL'
             if pattern == 'PD' and ops['Love'] < 4.0: return 'SELL'
-            
-            # 2. Технический выход: цена упала ниже точки входа на 5% (Стоп-лосс по ФСС)
+            # Стоп-лосс и Тейк-профит для гарантии появления красных точек
             if current_price < entry_price * 0.95: return 'SELL_STOP'
-            
-            # 3. Технический выход: цена выросла на 15% и потеряла импульс (Тейк-профит)
             if current_price > entry_price * 1.15 and ops['Will'] < 5.0: return 'SELL_PROFIT'
             
         return 'HOLD'
@@ -109,9 +106,11 @@ def run_fss_analysis(ticker='AAPL'):
     
     try:
         df = yf.download(ticker, period="2y", progress=False)
-        if len(df) == 0: return
+        if len(df) == 0:
+            print("ОШИБКА: Нет данных.")
+            return
     except Exception as e:
-        print(f"Ошибка сети: {e}")
+        print(f"ОШИБКА СЕТИ: {e}")
         return
 
     df['returns'] = df['Close'].pct_change()
@@ -129,7 +128,7 @@ def run_fss_analysis(ticker='AAPL'):
     trades_count = 0
     total_profit_pct = 0.0
     
-    print("Обработка квантов существования и симуляция торговли...")
+    print("Обработка квантов существования...")
     
     for i in range(200, len(df)):
         window = df.iloc[i-200:i+1]
@@ -159,13 +158,13 @@ def run_fss_analysis(ticker='AAPL'):
                 sell_points['x'].append(df.index[i])
                 sell_points['y'].append(current_price)
 
-    # Статистика
     print("\n" + "="*40)
     print(f"ВСЕГО СДЕЛОК: {trades_count}")
     print(f"СУММАРНАЯ ДОХОДНОСТЬ: {total_profit_pct:.2f}%")
     print("="*40)
 
-    # Отрисовка
+    # --- ГЕНЕРАЦИЯ ГРАФИКА В РЕЖИМЕ AGG ---
+    print("\nГенерация изображения (режим без окна)...")
     plt.figure(figsize=(15, 8))
     plt.plot(df.index, df['Close'], label='Поток Энергии (Цена)', color='#1f77b4', linewidth=1.5)
     
@@ -181,15 +180,20 @@ def run_fss_analysis(ticker='AAPL'):
     plt.legend()
     plt.grid(True, alpha=0.3)
     
+    # ЖЕСТКОЕ СОХРАНЕНИЕ В ФАЙЛ
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    filename = os.path.join(script_dir, 'fss_map_full.png')
+    filename = os.path.join(script_dir, 'fss_result.png')
     
     try:
         plt.savefig(filename, dpi=150, bbox_inches='tight')
-        print(f"\n>>> ГРАФИК СОХРАНЕН: {filename}")
-        print("Откройте этот файл, чтобы увидеть зеленые (вход) и красные (выход) точки.")
+        print(f"\n>>> УСПЕХ! ГРАФИК СОХРАНЕН:")
+        print(f">>> {filename}")
+        print("\n1. Откройте папку: " + script_dir)
+        print("2. Найдите файл 'fss_result.png'")
+        print("3. Откройте его как обычную картинку.")
     except Exception as e:
-        print(f"Ошибка сохранения: {e}")
+        print(f"\n!!! ОШИБКА ПРИ СОХРАНЕНИИ: {e}")
+        print("Проверьте права на запись в папку.")
     
     plt.close()
 
